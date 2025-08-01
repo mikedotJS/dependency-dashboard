@@ -4,14 +4,28 @@ A Node.js CLI tool that generates an HTML dashboard showing incoming and outgoin
 
 ## Installation
 
+### Global installation (recommended)
 ```bash
-npm install
+npm install -g dependency-dashboard
+```
+
+### Local installation
+```bash
+npm install dependency-dashboard
 ```
 
 ## Usage
 
+### Global installation
 ```bash
-node bin/cli.js <module> <folder>
+dependency-dashboard file <module> <folder>
+dependency-dashboard folder <folder>
+```
+
+### Local installation
+```bash
+npx dependency-dashboard file <module> <folder>
+npx dependency-dashboard folder <folder>
 ```
 
 ### Parameters
@@ -19,16 +33,20 @@ node bin/cli.js <module> <folder>
 - `<module>`: The target module to analyze (without file extension)
 - `<folder>`: The folder path to scan for dependencies
 
-### Example
+### Examples
 
 ```bash
-node bin/cli.js src/utils ./src
+# Analyze a specific file
+dependency-dashboard file src/utils ./src
+
+# Analyze all files in a folder
+dependency-dashboard folder ./src
 ```
 
 This will:
-1. Analyze the `src/utils` module
-2. Scan all files in the `./src` directory
-3. Generate an HTML dashboard showing which modules depend on `src/utils` (incoming) and which modules `src/utils` depends on (outgoing)
+1. Analyze the specified module(s)
+2. Scan all files in the specified directory
+3. Generate an HTML dashboard showing which modules depend on the target (incoming) and which modules the target depends on (outgoing)
 4. Save the dashboard as `dependency-dashboard.html` in the current directory
 
 ## Features
@@ -52,3 +70,14 @@ The tool:
 ## Output
 
 The tool generates `dependency-dashboard.html` in your current working directory, which you can open in any web browser to view the interactive dashboard.
+
+## Development
+
+For local development:
+
+```bash
+git clone https://github.com/mikedotJS/dependency-dashboard.git
+cd dependency-dashboard
+npm install
+node bin/cli.js file <module> <folder>
+```

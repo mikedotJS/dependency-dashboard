@@ -248,6 +248,252 @@ class DependencyAnalyzer {
   }
 }
 
+class FolderAnalyzer {
+  constructor(scanPath) {
+    this.scanPath = scanPath;
+    this.moduleFiles = new Map();
+    this.dependencyMatrix = new Map(); // file -> { incoming: Set, outgoing: Set }
+    this.dependencyCounts = new Map(); // file -> { incomingCount: number, outgoingCount: number }
+    this.importDetails = new Map(); // file -> { incoming: Map, outgoing: Map }
+  }
+
+  async analyze() {
+    await this.findModuleFiles();
+    await this.analyzeAllDependencies();
+    this.calculateDependencyMetrics();
+    return this.getFolderAnalysis();
+  }
+
+  async findModuleFiles() {
+    const files = await this.getAllFiles(this.scanPath);
+    
+    for (const file of files) {
+      const relativePath = path.relative(this.scanPath, file);
+      const ext = path.extname(file);
+      
+      if (['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'].includes(ext)) {
+        this.moduleFiles.set(relativePath, file);
+        // Also store without extension for matching
+        const withoutExt = relativePath.replace(/\.(js|ts|jsx|tsx|mjs|cjs)$/, '');
+        this.moduleFiles.set(withoutExt, file);
+      }
+    }
+    
+    console.log('Module files found:', Array.from(this.moduleFiles.keys()));
+  }
+
+  async getAllFiles(dir) {
+    const files = [];
+    const items = await fs.readdir(dir);
+    
+    for (const item of items) {
+      if (item === 'node_modules' || item.startsWith('.')) continue;
+      
+      const fullPath = path.join(dir, item);
+      const stat = await fs.stat(fullPath);
+      
+      if (stat.isDirectory()) {
+        files.push(...await this.getAllFiles(fullPath));
+      } else {
+        files.push(fullPath);
+      }
+    }
+    
+    return files;
+  }
+
+  async analyzeAllDependencies() {
+    console.log(`Found ${this.moduleFiles.size} files to analyze`);
+    
+    // Get only files with extensions for analysis
+    const filesWithExtensions = Array.from(this.moduleFiles.entries())
+      .filter(([path]) => path.includes('.'));
+    
+    console.log(`Analyzing ${filesWithExtensions.length} files with extensions`);
+    
+    // Initialize dependency tracking for each file with extension
+    for (const [relativePath] of filesWithExtensions) {
+      this.dependencyMatrix.set(relativePath, {
+        incoming: new Set(),
+        outgoing: new Set()
+      });
+      this.importDetails.set(relativePath, {
+        incoming: new Map(),
+        outgoing: new Map()
+      });
+    }
+    
+    // Analyze each file with extension
+    for (const [relativePath, fullPath] of filesWithExtensions) {
+      try {
+        const content = await fs.readFile(fullPath, 'utf8');
+        console.log(`Analyzing: ${relativePath}`);
+        this.findFileDependencies(content, relativePath);
+      } catch (error) {
+        console.warn(`Warning: Could not read file ${fullPath}:`, error.message);
+      }
+    }
+  }
+
+  findFileDependencies(content, currentFilePath) {
+    console.log(`    Analyzing dependencies for: ${currentFilePath}`);
+    const importRegex = /(?:import\s+(?:(\w+)\s*,\s*(\{[^}]*\})|(\{[^}]*\})|(\w+)|(\*\s+as\s+\w+)|(\w+\s*,\s*\w+))?\s+from\s+['"`]([^'"`]+)['"`]|require\s*\(\s*['"`]([^'"`]+)['"`]\))/g;
+    let match;
+    
+    while ((match = importRegex.exec(content)) !== null) {
+      const defaultAndNamed = match[1];
+      const namedImports = match[2] || match[3];
+      const defaultImport = match[4];
+      const namespaceImport = match[5];
+      const multipleImports = match[6];
+      const es6ImportPath = match[7];
+      const requirePath = match[8];
+      
+      const importPath = es6ImportPath || requirePath;
+      console.log(`      Found import: ${importPath}`);
+      
+      if (!importPath || importPath.startsWith('.') === false) {
+        console.log(`        -> Skipping external package`);
+        continue; // Skip external packages
+      }
+      
+      const resolvedPath = this.resolveImportPath(importPath, currentFilePath);
+      console.log(`        -> Resolved to: ${resolvedPath}`);
+      console.log(`        -> Exists in moduleFiles: ${this.moduleFiles.has(resolvedPath)}`);
+      
+      if (resolvedPath && resolvedPath !== currentFilePath && this.moduleFiles.has(resolvedPath)) {
+        console.log(`        -> Adding dependency: ${currentFilePath} -> ${resolvedPath}`);
+        
+        // Get the actual file path with extension for the resolved path
+        const resolvedFileWithExt = Array.from(this.moduleFiles.entries())
+          .find(([path]) => path === resolvedPath || path === resolvedPath + '.js' || path === resolvedPath + '.ts' || path === resolvedPath + '.jsx' || path === resolvedPath + '.tsx');
+        
+        if (resolvedFileWithExt) {
+          const actualResolvedPath = resolvedFileWithExt[0];
+          
+          // Add to dependency matrix
+          this.dependencyMatrix.get(currentFilePath).outgoing.add(actualResolvedPath);
+          this.dependencyMatrix.get(actualResolvedPath).incoming.add(currentFilePath);
+          
+          // Store import details
+          const importDetails = this.extractImportDetails(defaultAndNamed, namedImports, defaultImport, namespaceImport, multipleImports);
+          
+          if (!this.importDetails.get(currentFilePath).outgoing.has(actualResolvedPath)) {
+            this.importDetails.get(currentFilePath).outgoing.set(actualResolvedPath, []);
+          }
+          this.importDetails.get(currentFilePath).outgoing.get(actualResolvedPath).push(importDetails);
+          
+          if (!this.importDetails.get(actualResolvedPath).incoming.has(currentFilePath)) {
+            this.importDetails.get(actualResolvedPath).incoming.set(currentFilePath, []);
+          }
+          this.importDetails.get(actualResolvedPath).incoming.get(currentFilePath).push(importDetails);
+        }
+      } else {
+        console.log(`        -> Skipping: resolvedPath=${resolvedPath}, isCurrentFile=${resolvedPath === currentFilePath}, exists=${this.moduleFiles.has(resolvedPath)}`);
+      }
+    }
+  }
+
+  resolveImportPath(importPath, currentFilePath) {
+    if (!importPath || importPath.startsWith('.') === false) {
+      return null;
+    }
+    
+    try {
+      const currentFileFullPath = path.join(this.scanPath, currentFilePath);
+      const currentDir = path.dirname(currentFileFullPath);
+      
+      const resolvedPath = path.resolve(currentDir, importPath);
+      const relativeToScanPath = path.relative(this.scanPath, resolvedPath);
+      const finalPath = relativeToScanPath.replace(/\\/g, '/').replace(/\.(js|ts|jsx|tsx|mjs|cjs)$/, '');
+      
+      return finalPath;
+    } catch (error) {
+      console.warn(`Warning: Could not resolve import path ${importPath} from ${currentFilePath}:`, error.message);
+      return null;
+    }
+  }
+
+  extractImportDetails(defaultAndNamed, namedImports, defaultImport, namespaceImport, multipleImports) {
+    if (defaultAndNamed && namedImports) {
+      const defaultName = defaultAndNamed.trim();
+      const namedList = namedImports
+        .replace(/[{}]/g, '')
+        .split(',')
+        .map(imp => imp.trim())
+        .filter(imp => imp.length > 0)
+        .map(imp => {
+          const parts = imp.split(/\s+as\s+/);
+          return parts.length > 1 ? `${parts[0]} as ${parts[1]}` : parts[0];
+        });
+      return `Default import: ${defaultName}, Named imports: ${namedList.join(', ')}`;
+    } else if (namedImports) {
+      const imports = namedImports
+        .replace(/[{}]/g, '')
+        .split(',')
+        .map(imp => imp.trim())
+        .filter(imp => imp.length > 0)
+        .map(imp => {
+          const parts = imp.split(/\s+as\s+/);
+          return parts.length > 1 ? `${parts[0]} as ${parts[1]}` : parts[0];
+        });
+      return `Named imports: ${imports.join(', ')}`;
+    } else if (defaultImport) {
+      return `Default import: ${defaultImport}`;
+    } else if (namespaceImport) {
+      return `Namespace import: ${namespaceImport}`;
+    } else if (multipleImports) {
+      return `Multiple imports: ${multipleImports}`;
+    } else {
+      return 'Module import (no specific items)';
+    }
+  }
+
+  calculateDependencyMetrics() {
+    for (const [file, deps] of this.dependencyMatrix) {
+      this.dependencyCounts.set(file, {
+        incomingCount: deps.incoming.size,
+        outgoingCount: deps.outgoing.size,
+        totalDependencies: deps.incoming.size + deps.outgoing.size,
+        dependencyRatio: deps.incoming.size > 0 ? deps.outgoing.size / deps.incoming.size : deps.outgoing.size
+      });
+    }
+  }
+
+  getFolderAnalysis() {
+    const files = Array.from(this.dependencyCounts.entries()).map(([file, counts]) => ({
+      file,
+      ...counts,
+      incoming: Array.from(this.dependencyMatrix.get(file).incoming),
+      outgoing: Array.from(this.dependencyMatrix.get(file).outgoing),
+      importDetails: {
+        incoming: Object.fromEntries(this.importDetails.get(file).incoming),
+        outgoing: Object.fromEntries(this.importDetails.get(file).outgoing)
+      }
+    }));
+
+    // Sort by different metrics
+    const mostDependedOn = [...files].sort((a, b) => b.incomingCount - a.incomingCount);
+    const mostDependent = [...files].sort((a, b) => b.outgoingCount - a.outgoingCount);
+    const highestRatio = [...files].sort((a, b) => b.dependencyRatio - a.dependencyRatio);
+
+    return {
+      totalFiles: files.length,
+      files,
+      metrics: {
+        mostDependedOn: mostDependedOn.slice(0, 10),
+        mostDependent: mostDependent.slice(0, 10),
+        highestRatio: highestRatio.slice(0, 10)
+      },
+      summary: {
+        totalDependencies: files.reduce((sum, f) => sum + f.totalDependencies, 0),
+        averageIncoming: files.reduce((sum, f) => sum + f.incomingCount, 0) / files.length,
+        averageOutgoing: files.reduce((sum, f) => sum + f.outgoingCount, 0) / files.length
+      }
+    };
+  }
+}
+
 async function generateDashboard(targetFile, scanPath) {
   const analyzer = new DependencyAnalyzer(targetFile, scanPath);
   const results = await analyzer.analyze();
@@ -872,4 +1118,386 @@ function prepareGraphData(data) {
   return { nodes, links };
 }
 
-module.exports = { generateDashboard };
+async function generateFolderDashboard(scanPath) {
+  const analyzer = new FolderAnalyzer(scanPath);
+  const results = await analyzer.analyze();
+  
+  const htmlContent = generateFolderHTML(results);
+  const outputPath = path.join(process.cwd(), 'folder-dependency-dashboard.html');
+  
+  await fs.writeFile(outputPath, htmlContent);
+  console.log(`Folder Dashboard saved to: ${outputPath}`);
+  
+  return results;
+}
+
+function generateFolderHTML(data) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folder Dependency Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(45deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        .metrics-section {
+            padding: 30px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            margin-top: 20px;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .metric-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+        }
+        .file-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .file-item {
+            background: white;
+            margin: 8px 0;
+            padding: 12px 16px;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .file-name {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .file-stats {
+            color: #7f8c8d;
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+        .most-depended-on .file-item {
+            border-left-color: #e67e22;
+        }
+        .most-dependent .file-item {
+            border-left-color: #27ae60;
+        }
+        .highest-ratio .file-item {
+            border-left-color: #9b59b6;
+        }
+        .search-section {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .search-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .search-input {
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 25px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+        .search-input:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+        .search-stats {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+        .file-item.hidden {
+            display: none;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            border-left-color: #ffc107 !important;
+        }
+        .all-files-section {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        .all-files-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        .files-table {
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .files-table th,
+        .files-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .files-table th {
+            background: #2c3e50;
+            color: white;
+            font-weight: bold;
+        }
+        .files-table tr:hover {
+            background: #f8f9fa;
+        }
+        .sortable {
+            cursor: pointer;
+        }
+        .sortable:hover {
+            background: #34495e;
+        }
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Folder Dependency Dashboard</h1>
+            <p>Analysis of <strong>${data.totalFiles}</strong> files</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">${data.totalFiles}</div>
+                <div class="stat-label">Total Files</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.summary.totalDependencies}</div>
+                <div class="stat-label">Total Dependencies</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.summary.averageIncoming.toFixed(1)}</div>
+                <div class="stat-label">Avg Incoming</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.summary.averageOutgoing.toFixed(1)}</div>
+                <div class="stat-label">Avg Outgoing</div>
+            </div>
+        </div>
+        
+        <div class="search-section">
+            <div class="search-container">
+                <input type="text" id="searchInput" class="search-input" placeholder="Search files..." />
+                <div class="search-stats" id="searchStats"></div>
+            </div>
+        </div>
+        
+        <div class="metrics-section">
+            <div class="metrics-grid">
+                <div class="metric-card most-depended-on">
+                    <div class="metric-title">🔽 Most Depended On</div>
+                    <ul class="file-list">
+                        ${data.metrics.mostDependedOn.map(file => 
+                            `<li class="file-item" data-search="${file.file.toLowerCase()}">
+                                <div class="file-name">${file.file}</div>
+                                <div class="file-stats">Incoming: ${file.incomingCount} | Outgoing: ${file.outgoingCount}</div>
+                            </li>`
+                        ).join('')}
+                    </ul>
+                </div>
+                
+                <div class="metric-card most-dependent">
+                    <div class="metric-title">🔼 Most Dependent</div>
+                    <ul class="file-list">
+                        ${data.metrics.mostDependent.map(file => 
+                            `<li class="file-item" data-search="${file.file.toLowerCase()}">
+                                <div class="file-name">${file.file}</div>
+                                <div class="file-stats">Incoming: ${file.incomingCount} | Outgoing: ${file.outgoingCount}</div>
+                            </li>`
+                        ).join('')}
+                    </ul>
+                </div>
+                
+                <div class="metric-card highest-ratio">
+                    <div class="metric-title">⚖️ Highest Dependency Ratio</div>
+                    <ul class="file-list">
+                        ${data.metrics.highestRatio.map(file => 
+                            `<li class="file-item" data-search="${file.file.toLowerCase()}">
+                                <div class="file-name">${file.file}</div>
+                                <div class="file-stats">Ratio: ${file.dependencyRatio.toFixed(2)} | In: ${file.incomingCount} | Out: ${file.outgoingCount}</div>
+                            </li>`
+                        ).join('')}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="all-files-section">
+            <div class="all-files-title">📋 All Files</div>
+            <table class="files-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="file">File</th>
+                        <th class="sortable" data-sort="incomingCount">Incoming</th>
+                        <th class="sortable" data-sort="outgoingCount">Outgoing</th>
+                        <th class="sortable" data-sort="totalDependencies">Total</th>
+                        <th class="sortable" data-sort="dependencyRatio">Ratio</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTableBody">
+                    ${data.files.map(file => 
+                        `<tr class="file-row" data-search="${file.file.toLowerCase()}">
+                            <td class="file-name">${file.file}</td>
+                            <td>${file.incomingCount}</td>
+                            <td>${file.outgoingCount}</td>
+                            <td>${file.totalDependencies}</td>
+                            <td>${file.dependencyRatio.toFixed(2)}</td>
+                        </tr>`
+                    ).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        const searchStats = document.getElementById('searchStats');
+        
+        function performSearch() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            let matchCount = 0;
+            
+            if (searchTerm === '') {
+                document.querySelectorAll('.file-item, .file-row').forEach(el => {
+                    el.classList.remove('hidden', 'highlight');
+                });
+                searchStats.textContent = '';
+                return;
+            }
+            
+            document.querySelectorAll('.file-item, .file-row').forEach(el => {
+                const searchData = el.getAttribute('data-search');
+                
+                if (searchData && searchData.includes(searchTerm)) {
+                    el.classList.remove('hidden').classList.add('highlight');
+                    matchCount++;
+                } else {
+                    el.classList.add('hidden').classList.remove('highlight');
+                }
+            });
+            
+            if (searchTerm) {
+                searchStats.textContent = \`Found \${matchCount} matches for "\${searchTerm}"\`;
+            } else {
+                searchStats.textContent = '';
+            }
+        }
+        
+        // Sorting functionality
+        document.querySelectorAll('.sortable').forEach(th => {
+            th.addEventListener('click', function() {
+                const sortBy = this.getAttribute('data-sort');
+                const tbody = document.getElementById('filesTableBody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                
+                rows.sort((a, b) => {
+                    const aVal = a.querySelector(\`td:nth-child(\${getColumnIndex(sortBy)})\`).textContent;
+                    const bVal = b.querySelector(\`td:nth-child(\${getColumnIndex(sortBy)})\`).textContent;
+                    
+                    if (sortBy === 'file') {
+                        return aVal.localeCompare(bVal);
+                    } else {
+                        return parseFloat(bVal) - parseFloat(aVal);
+                    }
+                });
+                
+                rows.forEach(row => tbody.appendChild(row));
+            });
+        });
+        
+        function getColumnIndex(sortBy) {
+            const columns = ['file', 'incomingCount', 'outgoingCount', 'totalDependencies', 'dependencyRatio'];
+            return columns.indexOf(sortBy) + 1;
+        }
+        
+        // Event listeners
+        searchInput.addEventListener('input', performSearch);
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                performSearch();
+                searchInput.blur();
+            }
+        });
+    </script>
+</body>
+</html>`;
+}
+
+module.exports = { generateDashboard, generateFolderDashboard };
