@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const CircularDependencyDetector = require('./CircularDependencyDetector');
+const DependencyDepthAnalyzer = require('./DependencyDepthAnalyzer');
 const FileUtils = require('../utils/FileUtils');
 
 class FolderAnalyzer {
@@ -23,7 +24,12 @@ class FolderAnalyzer {
     const circularDependencies = circularDetector.detectCircularDependencies();
     const circularReport = circularDetector.getCircularDependencyReport();
     
-    return this.getFolderAnalysis(circularReport);
+    // Analyze dependency depths
+    const depthAnalyzer = new DependencyDepthAnalyzer();
+    depthAnalyzer.buildDependencyGraph(this.dependencyMatrix);
+    const depthReport = depthAnalyzer.getDepthAnalysisReport();
+    
+    return this.getFolderAnalysis(circularReport, depthReport);
   }
 
   async findModuleFiles() {
@@ -138,7 +144,7 @@ class FolderAnalyzer {
     }
   }
 
-  getFolderAnalysis(circularReport = null) {
+  getFolderAnalysis(circularReport = null, depthReport = null) {
     const files = Array.from(this.dependencyCounts.entries()).map(([file, counts]) => ({
       file,
       ...counts,
@@ -168,7 +174,8 @@ class FolderAnalyzer {
         averageIncoming: files.reduce((sum, f) => sum + f.incomingCount, 0) / files.length,
         averageOutgoing: files.reduce((sum, f) => sum + f.outgoingCount, 0) / files.length
       },
-      circularDependencies: circularReport
+      circularDependencies: circularReport,
+      depthAnalysis: depthReport
     };
   }
 }

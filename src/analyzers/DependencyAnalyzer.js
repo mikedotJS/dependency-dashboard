@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const CircularDependencyDetector = require('./CircularDependencyDetector');
+const DependencyDepthAnalyzer = require('./DependencyDepthAnalyzer');
 const FileUtils = require('../utils/FileUtils');
 
 class DependencyAnalyzer {
@@ -102,12 +103,18 @@ class DependencyAnalyzer {
     const circularDependencies = circularDetector.detectCircularDependencies();
     const circularReport = circularDetector.getCircularDependencyReport();
     
+    // Analyze dependency depths
+    const depthAnalyzer = new DependencyDepthAnalyzer();
+    depthAnalyzer.buildDependencyGraph(dependencyMatrix);
+    const depthReport = depthAnalyzer.getDepthAnalysisReport();
+    
     return {
       targetFile: this.targetFile,
       incoming: Object.fromEntries(this.dependencies.incoming),
       outgoing: Object.fromEntries(this.dependencies.outgoing),
       totalFiles: this.moduleFiles.size,
-      circularDependencies: circularReport
+      circularDependencies: circularReport,
+      depthAnalysis: depthReport
     };
   }
 

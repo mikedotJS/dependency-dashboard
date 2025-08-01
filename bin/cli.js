@@ -46,6 +46,27 @@ program
         } else {
           console.log('\n✅ No circular dependencies detected');
         }
+        
+        // Display dependency depth analysis
+        if (results.depthAnalysis) {
+          const { statistics, deepDependencyWarnings } = results.depthAnalysis;
+          console.log('\n📊 DEPENDENCY DEPTH ANALYSIS:');
+          console.log(`Average outgoing depth: ${statistics.averageOutgoingDepth}`);
+          console.log(`Average incoming depth: ${statistics.averageIncomingDepth}`);
+          console.log(`Maximum outgoing depth: ${statistics.maxOutgoingDepth}`);
+          console.log(`Maximum incoming depth: ${statistics.maxIncomingDepth}`);
+          
+          if (deepDependencyWarnings.length > 0) {
+            console.log(`\n⚠️  DEEP DEPENDENCY WARNINGS (${deepDependencyWarnings.length}):`);
+            deepDependencyWarnings.forEach((warning, index) => {
+              console.log(`\n${index + 1}. ${warning.severity.toUpperCase()}: ${warning.file}`);
+              console.log(`   ${warning.message}`);
+              console.log(`   💡 ${warning.recommendation}`);
+            });
+          } else {
+            console.log('\n✅ No deep dependency issues detected');
+          }
+        }
       })
       .catch((error) => {
         console.error('Error generating dashboard:', error.message);
@@ -83,6 +104,27 @@ program
           });
         } else {
           console.log('\n✅ No circular dependencies detected');
+        }
+        
+        // Display dependency depth analysis
+        if (results.depthAnalysis) {
+          const { statistics, deepDependencyWarnings } = results.depthAnalysis;
+          console.log('\n📊 DEPENDENCY DEPTH ANALYSIS:');
+          console.log(`Average outgoing depth: ${statistics.averageOutgoingDepth}`);
+          console.log(`Average incoming depth: ${statistics.averageIncomingDepth}`);
+          console.log(`Maximum outgoing depth: ${statistics.maxOutgoingDepth}`);
+          console.log(`Maximum incoming depth: ${statistics.maxIncomingDepth}`);
+          
+          if (deepDependencyWarnings.length > 0) {
+            console.log(`\n⚠️  DEEP DEPENDENCY WARNINGS (${deepDependencyWarnings.length}):`);
+            deepDependencyWarnings.forEach((warning, index) => {
+              console.log(`\n${index + 1}. ${warning.severity.toUpperCase()}: ${warning.file}`);
+              console.log(`   ${warning.message}`);
+              console.log(`   💡 ${warning.recommendation}`);
+            });
+          } else {
+            console.log('\n✅ No deep dependency issues detected');
+          }
         }
       })
       .catch((error) => {
@@ -127,6 +169,27 @@ program
           });
         } else {
           console.log('\n✅ No circular dependencies detected');
+        }
+        
+        // Display dependency depth analysis
+        if (results.depthAnalysis) {
+          const { statistics, deepDependencyWarnings } = results.depthAnalysis;
+          console.log('\n📊 DEPENDENCY DEPTH ANALYSIS:');
+          console.log(`Average outgoing depth: ${statistics.averageOutgoingDepth}`);
+          console.log(`Average incoming depth: ${statistics.averageIncomingDepth}`);
+          console.log(`Maximum outgoing depth: ${statistics.maxOutgoingDepth}`);
+          console.log(`Maximum incoming depth: ${statistics.maxIncomingDepth}`);
+          
+          if (deepDependencyWarnings.length > 0) {
+            console.log(`\n⚠️  DEEP DEPENDENCY WARNINGS (${deepDependencyWarnings.length}):`);
+            deepDependencyWarnings.forEach((warning, index) => {
+              console.log(`\n${index + 1}. ${warning.severity.toUpperCase()}: ${warning.file}`);
+              console.log(`   ${warning.message}`);
+              console.log(`   💡 ${warning.recommendation}`);
+            });
+          } else {
+            console.log('\n✅ No deep dependency issues detected');
+          }
         }
       })
       .catch((error) => {

@@ -335,6 +335,16 @@ class HTMLGenerator {
                 <div class="stat-label">Circular Dependencies</div>
             </div>
             ` : ''}
+            ${data.depthAnalysis ? `
+            <div class="stat-card">
+                <div class="stat-number">${data.depthAnalysis.statistics.maxOutgoingDepth}</div>
+                <div class="stat-label">Max Outgoing Depth</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.depthAnalysis.statistics.maxIncomingDepth}</div>
+                <div class="stat-label">Max Incoming Depth</div>
+            </div>
+            ` : ''}
         </div>
         
         <div class="search-section">
@@ -375,6 +385,34 @@ class HTMLGenerator {
                     <div class="circular-severity ${cd.severity}">${cd.severity.toUpperCase()}</div>
                     <div>${cd.description}</div>
                     <div class="circular-cycle">${cd.cycle.join(' → ')}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${data.depthAnalysis && data.depthAnalysis.deepDependencyWarnings && data.depthAnalysis.deepDependencyWarnings.length > 0 ? `
+        <div class="circular-dependencies-section">
+            <div class="circular-title">📊 Dependency Depth Analysis</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.statistics.averageOutgoingDepth}</div>
+                    <div class="stat-label">Avg Outgoing Depth</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.statistics.averageIncomingDepth}</div>
+                    <div class="stat-label">Avg Incoming Depth</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.deepDependencyWarnings.length}</div>
+                    <div class="stat-label">Deep Dependencies</div>
+                </div>
+            </div>
+            ${data.depthAnalysis.deepDependencyWarnings.map(warning => `
+                <div class="circular-item ${warning.severity}">
+                    <div class="circular-severity ${warning.severity}">${warning.severity.toUpperCase()}</div>
+                    <div><strong>${warning.file}</strong></div>
+                    <div>${warning.message}</div>
+                    <div style="margin-top: 8px; color: #27ae60; font-style: italic;">💡 ${warning.recommendation}</div>
                 </div>
             `).join('')}
         </div>
@@ -927,6 +965,16 @@ class HTMLGenerator {
                 <div class="stat-label">Circular Dependencies</div>
             </div>
             ` : ''}
+            ${data.depthAnalysis ? `
+            <div class="stat-card">
+                <div class="stat-number">${data.depthAnalysis.statistics.maxOutgoingDepth}</div>
+                <div class="stat-label">Max Outgoing Depth</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.depthAnalysis.statistics.averageOutgoingDepth}</div>
+                <div class="stat-label">Avg Outgoing Depth</div>
+            </div>
+            ` : ''}
         </div>
         
         <div class="search-section">
@@ -984,6 +1032,34 @@ class HTMLGenerator {
                     <div class="circular-severity ${cd.severity}">${cd.severity.toUpperCase()}</div>
                     <div>${cd.description}</div>
                     <div class="circular-cycle">${cd.cycle.join(' → ')}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${data.depthAnalysis && data.depthAnalysis.deepDependencyWarnings && data.depthAnalysis.deepDependencyWarnings.length > 0 ? `
+        <div class="circular-dependencies-section">
+            <div class="circular-title">📊 Dependency Depth Analysis</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.statistics.averageOutgoingDepth}</div>
+                    <div class="stat-label">Avg Outgoing Depth</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.statistics.averageIncomingDepth}</div>
+                    <div class="stat-label">Avg Incoming Depth</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${data.depthAnalysis.deepDependencyWarnings.length}</div>
+                    <div class="stat-label">Deep Dependencies</div>
+                </div>
+            </div>
+            ${data.depthAnalysis.deepDependencyWarnings.map(warning => `
+                <div class="circular-item ${warning.severity}">
+                    <div class="circular-severity ${warning.severity}">${warning.severity.toUpperCase()}</div>
+                    <div><strong>${warning.file}</strong></div>
+                    <div>${warning.message}</div>
+                    <div style="margin-top: 8px; color: #27ae60; font-style: italic;">💡 ${warning.recommendation}</div>
                 </div>
             `).join('')}
         </div>
