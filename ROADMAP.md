@@ -18,7 +18,7 @@ Transform dependency-dashboard into the go-to tool for visualizing and understan
 
 #### Enhanced Analysis
 - [x] **Circular dependency detection** - Identify and highlight circular imports
-- [ ] **Dependency depth analysis** - Show how deep dependency chains go
+- [x] **Dependency depth analysis** - Show how deep dependency chains go
 - [ ] **Unused dependency detection** - Find modules that are imported but never used
 - [ ] **Missing dependency detection** - Find modules that are used but not imported
 
