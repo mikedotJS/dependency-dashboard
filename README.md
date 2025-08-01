@@ -54,6 +54,7 @@ This will:
 - 📊 Interactive HTML dashboard with modern styling
 - 🔍 Analyzes JavaScript/TypeScript files (.js, .ts, .jsx, .tsx, .mjs, .cjs)
 - 📈 Shows incoming and outgoing dependencies
+- ⚠️ **Circular dependency detection** - Identifies and highlights circular imports with severity levels
 - 📱 Responsive design that works on mobile devices
 - 🎨 Beautiful gradient styling and animations
 - 📊 Statistics overview with total files scanned
@@ -65,7 +66,8 @@ The tool:
 2. Parses import/require statements to build dependency relationships
 3. Identifies modules that depend on the target module (incoming dependencies)
 4. Identifies modules that the target module depends on (outgoing dependencies)
-5. Generates a beautiful HTML dashboard with the results
+5. **Detects circular dependencies** using graph traversal algorithms
+6. Generates a beautiful HTML dashboard with the results
 
 ## Output
 

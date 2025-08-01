@@ -3,11 +3,12 @@
 ## 🎯 Vision
 Transform dependency-dashboard into the go-to tool for visualizing and understanding JavaScript/TypeScript module dependencies with advanced analytics and beautiful visualizations.
 
-## 🚀 Current Status (v1.0.1)
+## 🚀 Current Status (v1.1.0)
 - ✅ Basic CLI tool with file and folder analysis
 - ✅ HTML dashboard generation
 - ✅ Support for JS/TS/JSX/TSX files
 - ✅ Incoming and outgoing dependency visualization
+- ✅ **Circular dependency detection with severity levels**
 - ✅ Responsive design
 - ✅ npm package published
 
@@ -16,7 +17,7 @@ Transform dependency-dashboard into the go-to tool for visualizing and understan
 ### 🔥 High Priority (v1.1.0 - v1.2.0)
 
 #### Enhanced Analysis
-- [ ] **Circular dependency detection** - Identify and highlight circular imports
+- [x] **Circular dependency detection** - Identify and highlight circular imports
 - [ ] **Dependency depth analysis** - Show how deep dependency chains go
 - [ ] **Unused dependency detection** - Find modules that are imported but never used
 - [ ] **Missing dependency detection** - Find modules that are used but not imported
