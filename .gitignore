@@ -110,6 +110,8 @@ public
 
 # Generated files
 dependency-dashboard.html
+folder-dependency-dashboard.html
+*.html
 
 # OS generated files
 .DS_Store

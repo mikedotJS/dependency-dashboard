@@ -11,8 +11,20 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["dependencies", "visualization", "cli", "dashboard"],
-  "author": "",
+  "author": "mikedotJS",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikedotJS/dependency-dashboard.git"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "src/",
+    "bin/",
+    "README.md"
+  ],
   "dependencies": {
     "commander": "^9.4.1",
     "fs-extra": "^11.1.1",
