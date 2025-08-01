@@ -1,6 +1,99 @@
 const fs = require('fs-extra');
 const path = require('path');
 
+class CircularDependencyDetector {
+  constructor() {
+    this.dependencyGraph = new Map(); // file -> Set of dependencies
+    this.visited = new Set();
+    this.recursionStack = new Set();
+    this.circularDependencies = [];
+  }
+
+  buildDependencyGraph(dependencyMatrix) {
+    // Convert dependency matrix to adjacency list
+    for (const [file, deps] of dependencyMatrix) {
+      if (!this.dependencyGraph.has(file)) {
+        this.dependencyGraph.set(file, new Set());
+      }
+      
+      // Add outgoing dependencies
+      for (const outgoingDep of deps.outgoing) {
+        this.dependencyGraph.get(file).add(outgoingDep);
+      }
+    }
+  }
+
+  detectCircularDependencies() {
+    this.circularDependencies = [];
+    this.visited.clear();
+    this.recursionStack.clear();
+
+    // Use DFS to detect cycles
+    for (const file of this.dependencyGraph.keys()) {
+      if (!this.visited.has(file)) {
+        this.dfs(file, []);
+      }
+    }
+
+    return this.circularDependencies;
+  }
+
+  dfs(currentFile, path) {
+    if (this.recursionStack.has(currentFile)) {
+      // Found a cycle
+      const cycleStartIndex = path.indexOf(currentFile);
+      const cycle = path.slice(cycleStartIndex).concat([currentFile]);
+      this.circularDependencies.push({
+        cycle: cycle,
+        severity: this.calculateSeverity(cycle),
+        description: this.generateCycleDescription(cycle)
+      });
+      return;
+    }
+
+    if (this.visited.has(currentFile)) {
+      return;
+    }
+
+    this.visited.add(currentFile);
+    this.recursionStack.add(currentFile);
+    path.push(currentFile);
+
+    const dependencies = this.dependencyGraph.get(currentFile) || new Set();
+    for (const dependency of dependencies) {
+      this.dfs(dependency, [...path]);
+    }
+
+    this.recursionStack.delete(currentFile);
+  }
+
+  calculateSeverity(cycle) {
+    // Calculate severity based on cycle length and complexity
+    if (cycle.length === 2) {
+      return 'critical'; // Direct circular dependency
+    } else if (cycle.length <= 4) {
+      return 'warning'; // Short indirect cycle
+    } else {
+      return 'info'; // Long indirect cycle
+    }
+  }
+
+  generateCycleDescription(cycle) {
+    const cycleString = cycle.join(' → ');
+    return `Circular dependency detected: ${cycleString}`;
+  }
+
+  getCircularDependencyReport() {
+    return {
+      totalCircularDependencies: this.circularDependencies.length,
+      critical: this.circularDependencies.filter(cd => cd.severity === 'critical').length,
+      warnings: this.circularDependencies.filter(cd => cd.severity === 'warning').length,
+      info: this.circularDependencies.filter(cd => cd.severity === 'info').length,
+      circularDependencies: this.circularDependencies
+    };
+  }
+}
+
 class DependencyAnalyzer {
   constructor(targetFile, scanPath) {
     this.targetFile = targetFile;
@@ -15,11 +108,97 @@ class DependencyAnalyzer {
   async analyze() {
     await this.findModuleFiles();
     await this.analyzeDependencies();
+    
+    // Build complete dependency matrix for circular detection
+    const dependencyMatrix = new Map();
+    
+    // Initialize all files in the dependency matrix
+    const allFiles = new Set([this.targetFile]);
+    for (const [file] of this.dependencies.incoming) {
+      allFiles.add(file);
+    }
+    for (const [file] of this.dependencies.outgoing) {
+      allFiles.add(file);
+    }
+    
+    // Normalize file paths to match moduleFiles keys
+    const normalizedFiles = new Set();
+    for (const file of allFiles) {
+      // Try different variations of the file path
+      const variations = [
+        file,
+        file.replace(/\.(js|ts|jsx|tsx|mjs|cjs)$/, ''),
+        file + '.js',
+        file + '.ts',
+        file + '.jsx',
+        file + '.tsx'
+      ];
+      
+      for (const variation of variations) {
+        if (this.moduleFiles.has(variation)) {
+          normalizedFiles.add(variation);
+          break;
+        }
+      }
+    }
+    
+    // Analyze dependencies for all files to build complete graph
+    for (const file of normalizedFiles) {
+      if (!dependencyMatrix.has(file)) {
+        dependencyMatrix.set(file, { incoming: new Set(), outgoing: new Set() });
+      }
+      
+      // Get the full path for the file
+      const fullPath = this.moduleFiles.get(file) || this.moduleFiles.get(file + '.js') || 
+                      this.moduleFiles.get(file + '.ts') || this.moduleFiles.get(file + '.jsx') || 
+                      this.moduleFiles.get(file + '.tsx');
+      
+      if (fullPath) {
+        try {
+          const content = await fs.readFile(fullPath, 'utf8');
+          this.findFileDependenciesForMatrix(content, file, dependencyMatrix);
+        } catch (error) {
+          console.warn(`Warning: Could not read file ${fullPath}:`, error.message);
+        }
+      }
+    }
+    
+    // Also check for files without extensions
+    for (const file of normalizedFiles) {
+      const fullPath = this.moduleFiles.get(file);
+      if (fullPath) {
+        try {
+          const content = await fs.readFile(fullPath, 'utf8');
+          this.findFileDependenciesForMatrix(content, file, dependencyMatrix);
+        } catch (error) {
+          console.warn(`Warning: Could not read file ${fullPath}:`, error.message);
+        }
+      }
+    }
+    
+    // Debug: Print dependency matrix (only in verbose mode)
+    if (process.env.VERBOSE) {
+      console.log('Module files keys:', Array.from(this.moduleFiles.keys()));
+      console.log('Dependency matrix for circular detection:');
+      for (const [file, deps] of dependencyMatrix) {
+        console.log(`  ${file}:`);
+        console.log(`    outgoing: ${Array.from(deps.outgoing).join(', ')}`);
+        console.log(`    incoming: ${Array.from(deps.incoming).join(', ')}`);
+      }
+    }
+    
+    // Detect circular dependencies
+    const circularDetector = new CircularDependencyDetector();
+    circularDetector.buildDependencyGraph(dependencyMatrix);
+    const circularDependencies = circularDetector.detectCircularDependencies();
+    const circularReport = circularDetector.getCircularDependencyReport();
+    
     return {
       targetFile: this.targetFile,
       incoming: Object.fromEntries(this.dependencies.incoming),
       outgoing: Object.fromEntries(this.dependencies.outgoing),
-      totalFiles: this.moduleFiles.size
+      totalFiles: this.moduleFiles.size,
+      circularDependencies: circularReport
     };
   }
 
@@ -246,6 +425,51 @@ class DependencyAnalyzer {
       return 'Module import (no specific items)';
     }
   }
+
+  findFileDependenciesForMatrix(content, currentFilePath, dependencyMatrix) {
+    const importRegex = /(?:import\s+(?:(\w+)\s*,\s*(\{[^}]*\})|(\{[^}]*\})|(\w+)|(\*\s+as\s+\w+)|(\w+\s*,\s*\w+))?\s+from\s+['"`]([^'"`]+)['"`]|require\s*\(\s*['"`]([^'"`]+)['"`]\))/g;
+    let match;
+    
+    while ((match = importRegex.exec(content)) !== null) {
+      const es6ImportPath = match[7];
+      const requirePath = match[8];
+      
+      const importPath = es6ImportPath || requirePath;
+      
+      if (!importPath || importPath.startsWith('.') === false) {
+        continue; // Skip external packages
+      }
+      
+      const resolvedPath = this.resolveImportPath(importPath, currentFilePath);
+      
+      // Try to find the actual file path in moduleFiles
+      let actualResolvedPath = resolvedPath;
+      if (!this.moduleFiles.has(resolvedPath)) {
+        // Try with different extensions
+        const extensions = ['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'];
+        for (const ext of extensions) {
+          const withExt = resolvedPath + ext;
+          if (this.moduleFiles.has(withExt)) {
+            actualResolvedPath = withExt;
+            break;
+          }
+        }
+      }
+      
+      if (actualResolvedPath && actualResolvedPath !== currentFilePath && this.moduleFiles.has(actualResolvedPath)) {
+        // Add to dependency matrix
+        if (!dependencyMatrix.has(currentFilePath)) {
+          dependencyMatrix.set(currentFilePath, { incoming: new Set(), outgoing: new Set() });
+        }
+        if (!dependencyMatrix.has(actualResolvedPath)) {
+          dependencyMatrix.set(actualResolvedPath, { incoming: new Set(), outgoing: new Set() });
+        }
+        
+        dependencyMatrix.get(currentFilePath).outgoing.add(actualResolvedPath);
+        dependencyMatrix.get(actualResolvedPath).incoming.add(currentFilePath);
+      }
+    }
+  }
 }
 
 class FolderAnalyzer {
@@ -261,7 +485,14 @@ class FolderAnalyzer {
     await this.findModuleFiles();
     await this.analyzeAllDependencies();
     this.calculateDependencyMetrics();
-    return this.getFolderAnalysis();
+    
+    // Detect circular dependencies
+    const circularDetector = new CircularDependencyDetector();
+    circularDetector.buildDependencyGraph(this.dependencyMatrix);
+    const circularDependencies = circularDetector.detectCircularDependencies();
+    const circularReport = circularDetector.getCircularDependencyReport();
+    
+    return this.getFolderAnalysis(circularReport);
   }
 
   async findModuleFiles() {
@@ -460,7 +691,7 @@ class FolderAnalyzer {
     }
   }
 
-  getFolderAnalysis() {
+  getFolderAnalysis(circularReport = null) {
     const files = Array.from(this.dependencyCounts.entries()).map(([file, counts]) => ({
       file,
       ...counts,
@@ -489,7 +720,8 @@ class FolderAnalyzer {
         totalDependencies: files.reduce((sum, f) => sum + f.totalDependencies, 0),
         averageIncoming: files.reduce((sum, f) => sum + f.incomingCount, 0) / files.length,
         averageOutgoing: files.reduce((sum, f) => sum + f.outgoingCount, 0) / files.length
-      }
+      },
+      circularDependencies: circularReport
     };
   }
 }
@@ -742,6 +974,69 @@ function generateHTML(data) {
         .legend-color.outgoing {
             background-color: #27ae60;
         }
+        .warning {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+        }
+        .success {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+            color: white;
+        }
+        .circular-dependencies-section {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        .circular-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        .circular-item {
+            background: white;
+            margin: 12px 0;
+            padding: 16px 20px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .circular-item.critical {
+            border-left-color: #e74c3c;
+            background: linear-gradient(135deg, #fff5f5, #ffe6e6);
+        }
+        .circular-item.warning {
+            border-left-color: #f39c12;
+            background: linear-gradient(135deg, #fffbf0, #fff3cd);
+        }
+        .circular-item.info {
+            border-left-color: #3498db;
+            background: linear-gradient(135deg, #f0f8ff, #e3f2fd);
+        }
+        .circular-severity {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            margin-bottom: 8px;
+        }
+        .circular-severity.critical {
+            color: #e74c3c;
+        }
+        .circular-severity.warning {
+            color: #f39c12;
+        }
+        .circular-severity.info {
+            color: #3498db;
+        }
+        .circular-cycle {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #2c3e50;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 4px;
+        }
         @media (max-width: 768px) {
             .dependencies {
                 grid-template-columns: 1fr;
@@ -772,6 +1067,12 @@ function generateHTML(data) {
                 <div class="stat-number">${data.totalFiles}</div>
                 <div class="stat-label">Total Files Scanned</div>
             </div>
+            ${data.circularDependencies ? `
+            <div class="stat-card ${data.circularDependencies.totalCircularDependencies > 0 ? 'warning' : 'success'}">
+                <div class="stat-number">${data.circularDependencies.totalCircularDependencies}</div>
+                <div class="stat-label">Circular Dependencies</div>
+            </div>
+            ` : ''}
         </div>
         
         <div class="search-section">
@@ -803,6 +1104,19 @@ function generateHTML(data) {
             <div id="tooltip" class="tooltip" style="display: none;"></div>
         </div>
         </div>
+        
+        ${data.circularDependencies && data.circularDependencies.totalCircularDependencies > 0 ? `
+        <div class="circular-dependencies-section">
+            <div class="circular-title">⚠️ Circular Dependencies Detected</div>
+            ${data.circularDependencies.circularDependencies.map(cd => `
+                <div class="circular-item ${cd.severity}">
+                    <div class="circular-severity ${cd.severity}">${cd.severity.toUpperCase()}</div>
+                    <div>${cd.description}</div>
+                    <div class="circular-cycle">${cd.cycle.join(' → ')}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
         
         <div class="dependencies">
             <div class="dep-section incoming">
@@ -1244,6 +1558,69 @@ function generateFolderHTML(data) {
         .highest-ratio .file-item {
             border-left-color: #9b59b6;
         }
+        .warning {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+        }
+        .success {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+            color: white;
+        }
+        .circular-dependencies-section {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        .circular-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        .circular-item {
+            background: white;
+            margin: 12px 0;
+            padding: 16px 20px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .circular-item.critical {
+            border-left-color: #e74c3c;
+            background: linear-gradient(135deg, #fff5f5, #ffe6e6);
+        }
+        .circular-item.warning {
+            border-left-color: #f39c12;
+            background: linear-gradient(135deg, #fffbf0, #fff3cd);
+        }
+        .circular-item.info {
+            border-left-color: #3498db;
+            background: linear-gradient(135deg, #f0f8ff, #e3f2fd);
+        }
+        .circular-severity {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            margin-bottom: 8px;
+        }
+        .circular-severity.critical {
+            color: #e74c3c;
+        }
+        .circular-severity.warning {
+            color: #f39c12;
+        }
+        .circular-severity.info {
+            color: #3498db;
+        }
+        .circular-cycle {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #2c3e50;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 4px;
+        }
         .search-section {
             padding: 20px 30px;
             background: #f8f9fa;
@@ -1348,6 +1725,12 @@ function generateFolderHTML(data) {
                 <div class="stat-number">${data.summary.averageOutgoing.toFixed(1)}</div>
                 <div class="stat-label">Avg Outgoing</div>
             </div>
+            ${data.circularDependencies ? `
+            <div class="stat-card ${data.circularDependencies.totalCircularDependencies > 0 ? 'warning' : 'success'}">
+                <div class="stat-number">${data.circularDependencies.totalCircularDependencies}</div>
+                <div class="stat-label">Circular Dependencies</div>
+            </div>
+            ` : ''}
         </div>
         
         <div class="search-section">
@@ -1396,6 +1779,19 @@ function generateFolderHTML(data) {
                 </div>
             </div>
         </div>
+        
+        ${data.circularDependencies && data.circularDependencies.totalCircularDependencies > 0 ? `
+        <div class="circular-dependencies-section">
+            <div class="circular-title">⚠️ Circular Dependencies Detected</div>
+            ${data.circularDependencies.circularDependencies.map(cd => `
+                <div class="circular-item ${cd.severity}">
+                    <div class="circular-severity ${cd.severity}">${cd.severity.toUpperCase()}</div>
+                    <div>${cd.description}</div>
+                    <div class="circular-cycle">${cd.cycle.join(' → ')}</div>
+                </div>
+            `).join('')}
+        </div>
+        ` : ''}
         
         <div class="all-files-section">
             <div class="all-files-title">📋 All Files</div>

@@ -28,8 +28,24 @@ program
     console.log(`Target file (relative to scan folder): ${targetFile}`);
     
     generateDashboard(targetFile, absoluteFolder)
-      .then(() => {
+      .then((results) => {
         console.log('Dashboard generated successfully!');
+        
+        // Display circular dependency warnings
+        if (results.circularDependencies && results.circularDependencies.totalCircularDependencies > 0) {
+          console.log('\n⚠️  CIRCULAR DEPENDENCIES DETECTED:');
+          console.log(`Total: ${results.circularDependencies.totalCircularDependencies}`);
+          console.log(`Critical: ${results.circularDependencies.critical}`);
+          console.log(`Warnings: ${results.circularDependencies.warnings}`);
+          console.log(`Info: ${results.circularDependencies.info}`);
+          
+          results.circularDependencies.circularDependencies.forEach((cd, index) => {
+            console.log(`\n${index + 1}. ${cd.severity.toUpperCase()}: ${cd.description}`);
+            console.log(`   Cycle: ${cd.cycle.join(' → ')}`);
+          });
+        } else {
+          console.log('\n✅ No circular dependencies detected');
+        }
       })
       .catch((error) => {
         console.error('Error generating dashboard:', error.message);
@@ -52,6 +68,22 @@ program
         console.log('Folder dashboard generated successfully!');
         console.log(`Analyzed ${results.totalFiles} files`);
         console.log(`Total dependencies: ${results.summary.totalDependencies}`);
+        
+        // Display circular dependency warnings
+        if (results.circularDependencies && results.circularDependencies.totalCircularDependencies > 0) {
+          console.log('\n⚠️  CIRCULAR DEPENDENCIES DETECTED:');
+          console.log(`Total: ${results.circularDependencies.totalCircularDependencies}`);
+          console.log(`Critical: ${results.circularDependencies.critical}`);
+          console.log(`Warnings: ${results.circularDependencies.warnings}`);
+          console.log(`Info: ${results.circularDependencies.info}`);
+          
+          results.circularDependencies.circularDependencies.forEach((cd, index) => {
+            console.log(`\n${index + 1}. ${cd.severity.toUpperCase()}: ${cd.description}`);
+            console.log(`   Cycle: ${cd.cycle.join(' → ')}`);
+          });
+        } else {
+          console.log('\n✅ No circular dependencies detected');
+        }
       })
       .catch((error) => {
         console.error('Error generating folder dashboard:', error.message);
@@ -78,8 +110,24 @@ program
     console.log(`Target file (relative to scan folder): ${targetFile}`);
     
     generateDashboard(targetFile, absoluteFolder)
-      .then(() => {
+      .then((results) => {
         console.log('Dashboard generated successfully!');
+        
+        // Display circular dependency warnings
+        if (results.circularDependencies && results.circularDependencies.totalCircularDependencies > 0) {
+          console.log('\n⚠️  CIRCULAR DEPENDENCIES DETECTED:');
+          console.log(`Total: ${results.circularDependencies.totalCircularDependencies}`);
+          console.log(`Critical: ${results.circularDependencies.critical}`);
+          console.log(`Warnings: ${results.circularDependencies.warnings}`);
+          console.log(`Info: ${results.circularDependencies.info}`);
+          
+          results.circularDependencies.circularDependencies.forEach((cd, index) => {
+            console.log(`\n${index + 1}. ${cd.severity.toUpperCase()}: ${cd.description}`);
+            console.log(`   Cycle: ${cd.cycle.join(' → ')}`);
+          });
+        } else {
+          console.log('\n✅ No circular dependencies detected');
+        }
       })
       .catch((error) => {
         console.error('Error generating dashboard:', error.message);
